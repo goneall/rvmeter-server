@@ -6,9 +6,7 @@ The client side implementation is an open source Flutter based application rvmet
 
 ## Quick start
 
-Copy or move all directories in the folder to <C:\Users\Your User Name\Documents\Arduino\libraries>
-
-Build and Upload the sketch
+Build and Upload the sketch.  Unless you enable debug, all of the dependencies should be included in the board drivers / included libraries.
 
 ## Hardware Design
 
@@ -45,3 +43,7 @@ The BLE `SERVICE_UUID` is set to "68f9860f-4946-4031-8107-9327cd9f92ca".
 The touch sensor reading uses the Touch charactistic with the `TOUCH_CHARACTERISTIC_UUID` set to "bcdd0001-b67f-46c7-b2b8-e8a385ac70fc".
 
 The voltage sensor reading uses the Voltage charactistic with the `VOLTAGE_CHARACTERISTIC_UUID` set to "bcdd0002-b67f-46c7-b2b8-e8a385ac70fc".
+
+## Debug
+
+The debug code uses the display on the TTGO display.  It requires the additional dependency of the TFT_eSPI library that needs to be configure for the TTGO display.  There is also a dependency on the Free Fonts.

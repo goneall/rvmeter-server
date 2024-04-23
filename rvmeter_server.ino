@@ -5,9 +5,13 @@
 #include <BLEUtils.h>
 #include <BLEServer.h>
 #include <Preferences.h>
+#include "driver/touch_sensor.h"
 
 Preferences preferences;
 
+// #define DEBUG
+
+#ifdef DEBUG
 // TEMP - Display for debugging
 #include "Free_Fonts.h"
 #include "SPI.h"
@@ -15,10 +19,9 @@ Preferences preferences;
 
 // Use hardware SPI
 TFT_eSPI tft = TFT_eSPI();
+#endif
 
-//END TEMP
-
-#define SECONDS_BETWEEN_SAMPLES     30   //TODO: Set this to 120 before production
+#define DEFAULT_REFRESH_RATE        60
 #define NUM_SAMPLES                 10
 #define TOUCHPIN                    T5
 #define VOLTPIN                     32
@@ -29,6 +32,7 @@ TFT_eSPI tft = TFT_eSPI();
 #define TOUCH_CHARACTERISTIC_UUID   "bcdd0001-b67f-46c7-b2b8-e8a385ac70fc"
 #define VOLTAGE_CHARACTERISTIC_UUID "bcdd0002-b67f-46c7-b2b8-e8a385ac70fc"
 #define TOUCH_CALIBRATION_CHARACTERISTIC_UUID "bcdd0011-b67f-46c7-b2b8-e8a385ac70fc"
+#define REFRESH_RATE_CHARACTERISTIC_UUID "bcdd0005-b67f-46c7-b2b8-e8a385ac70fc"
 
 #define TOUCH_CALIBRATION_PREF_KEY "calibration"
 #define RW_MODE                     false
@@ -40,6 +44,8 @@ int touchValues[NUM_SAMPLES];
 BLECharacteristic *bleTouchValue;
 BLECharacteristic *bleVoltageValue;
 BLECharacteristic *bleTouchCalibration;
+BLECharacteristic *bleRefreshRate;
+int refreshRate = DEFAULT_REFRESH_RATE;
 
 std::string calibrationData = "0:0"; // format: value:percentage,value:percentage,...
 
@@ -51,6 +57,22 @@ class MyServerCallbacks: public BLEServerCallbacks {
     void onDisconnect(BLEServer* pServer) {
       pServer->startAdvertising(); // restart advertising
     }
+};
+
+class RefreshRateWriteCallback : public BLECharacteristicCallbacks {
+
+  void onWrite(BLECharacteristic *pCharacteristic) {
+    uint8_t *byteRefreshRate = pCharacteristic->getData();
+    size_t size = pCharacteristic->getLength();
+    if (size != 4) {
+      Serial.print('Invalid length for refresh: ');
+      Serial.println(size);
+      return;
+    }
+    refreshRate = byteRefreshRate[0];
+    Serial.print("Refresh rate updated to: ");
+    Serial.println(refreshRate);
+  }
 };
 
 class CalibrationWriteCallback : public BLECharacteristicCallbacks {
@@ -67,7 +89,7 @@ class CalibrationWriteCallback : public BLECharacteristicCallbacks {
       preferences.putString(TOUCH_CALIBRATION_PREF_KEY, calibrationData.c_str());
       preferences.end();
     }
-  }
+  };
 
   bool validCalibrationData(std::string data) {
     return data.length() > 10;
@@ -80,6 +102,8 @@ void setup() {
   Serial.begin(115200);
   delay(1000); // give me time to bring up serial monitor
   Serial.println("Starting RV Meter");
+
+  // setup voltage measurement
   pinMode(VOLTPIN, INPUT);
   if (adc1_config_width(ADC_WIDTH_BIT_12) != ESP_OK) {
     Serial.println("Error configuring ADC1");
@@ -88,6 +112,13 @@ void setup() {
     Serial.println("Error configuring channel atten.");
   }
   esp_adc_cal_characterize(ADC_UNIT_1, ADC_ATTEN_DB_11, ADC_WIDTH_BIT_12, 0, &adc1_value);
+
+  // setup touch sensor
+  touch_pad_init();
+  touch_pad_set_voltage(TOUCH_HVOLT_2V7, TOUCH_LVOLT_0V5, TOUCH_HVOLT_ATTEN_1V5);
+  
+
+  // setup bluetooth low energy
   BLEDevice::init(SERVER_NAME);
   BLEServer *pServer = BLEDevice::createServer();
   BLEService *pService = pServer->createService(SERVICE_UUID);
@@ -105,6 +136,11 @@ void setup() {
                                          BLECharacteristic::PROPERTY_READ  |
                                           BLECharacteristic::PROPERTY_WRITE
                                        );
+  bleRefreshRate = pService->createCharacteristic(
+                                         REFRESH_RATE_CHARACTERISTIC_UUID,
+                                         BLECharacteristic::PROPERTY_READ  |
+                                          BLECharacteristic::PROPERTY_WRITE
+                                       );
   pService->start();
   BLEAdvertising *pAdvertising = BLEDevice::getAdvertising();
   pAdvertising->addServiceUUID(SERVICE_UUID);
@@ -112,6 +148,8 @@ void setup() {
   pAdvertising->setMinPreferred(0x06);  // functions that help with iPhone connections issue
   pAdvertising->setMinPreferred(0x12);
   BLEDevice::startAdvertising();
+
+  // Setup preferenches for saving touch calibration
   preferences.begin("rvsetting", RW_MODE);
   if (preferences.isKey(TOUCH_CALIBRATION_PREF_KEY)) {
     String prefsValue = preferences.getString(TOUCH_CALIBRATION_PREF_KEY);
@@ -127,10 +165,12 @@ void setup() {
   preferences.end();
   bleTouchCalibration->setValue(calibrationData);
   bleTouchCalibration->setCallbacks(new CalibrationWriteCallback());
+  bleRefreshRate->setValue(refreshRate);
+  bleRefreshRate->setCallbacks(new RefreshRateWriteCallback());
   // 
   Serial.println("RV Service Started");
 
-  //BEGIN DEBUG
+#ifdef DEBUG
     tft.begin();
 
   tft.setRotation(1);
@@ -143,7 +183,7 @@ void setup() {
   tft.setFreeFont(FF18);                 // Select the font
   String TEXT = "Started...";
   tft.drawString(TEXT, 160, 120, GFXFF);
-  //END DEBUG
+#endif
 }
 
 int count = 0;
@@ -166,11 +206,11 @@ void loop() {
   Serial.println(touchSample);
   bleTouchValue->setValue(touchSample);
 
-  // BEGIN DEBUG
+#ifdef DEBUG
   String TEXT = "Loop number " + String(count);
   count++;
   tft.drawString(TEXT, 10, 120, GFXFF);
-  // END DEBUG
+#endif
 
-  delay(SECONDS_BETWEEN_SAMPLES * 1000);
+  delay(refreshRate * 1000);
 }
