@@ -24,7 +24,7 @@ The the Touch characteristic value is set to the raw capacitance measurement.
 
 ### Voltage Sensor
 
-The voltage is read using one of the analog pins of the ESP32.
+The voltage is read using one of the analog pins of the ESP32. 
 
 A voltage divider consisting of a 470KOhm resistor and a 100KOhm resistor divides the voltage from the 12V battery by 5.7.
 
